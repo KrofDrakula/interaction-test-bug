@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { expect, jest } from "@storybook/jest";
 import { userEvent, within } from "@storybook/testing-library";
 
@@ -47,9 +47,6 @@ MocksRequireClearing.args = {
   ),
 };
 
-const sleep = async (time) =>
-  new Promise((resolve) => setTimeout(resolve, time));
-
 MocksRequireClearing.play = async ({ canvasElement, args }) => {
   // uncomment this to fix some of the debug stepping problems
   // args.getData.mockClear();
@@ -73,4 +70,65 @@ MocksRequireClearing.play = async ({ canvasElement, args }) => {
   await expect(await args.getData.mock.results[2].value).toEqual(
     "Result for call #2"
   );
+};
+
+export const MocksWithState = ({ getData }) => {
+  const [data, setData] = useState(null);
+  const timer = useRef(null);
+
+  useEffect(() => {
+    timer.current = setInterval(() => {
+      getData()
+        .then((data) => setData({ type: "success", data }))
+        .catch((err) => setData({ type: "error", data: err }));
+    }, 1000);
+  }, []);
+
+  return (
+    <>
+      <p>
+        This component will fake a call to an API whose state changes over time.
+        The mocks must reflect that state, and be able to rewind steps when
+        needed.
+      </p>
+      <p>
+        The first call will succeed, the second will fail, and the thirt will
+        succeed again.
+      </p>
+      <p>Current result: {JSON.stringify(data)}</p>
+    </>
+  );
+};
+
+MocksWithState.args = {
+  getData: jest
+    .fn()
+    .mockReturnValueOnce(Promise.resolve({ response: "Yes!" }))
+    .mockReturnValueOnce(Promise.reject(new Error("WTF")))
+    .mockReturnValueOnce(Promise.resolve({ response: "Second yes!" })),
+};
+
+const sleep = async (time) =>
+  new Promise((resolve) => setTimeout(resolve, time));
+
+MocksWithState.play = async ({ args }) => {
+  args.getData.mockClear();
+  do {
+    await sleep(100);
+  } while (args.getData.mock.calls.length < 1);
+  await expect(await args.getData.mock.results[0].value).toEqual({
+    response: "Yes!",
+  });
+  do {
+    await sleep(100);
+  } while (args.getData.mock.calls.length < 2);
+  await args.getData.mock.results[1].value.catch((value) =>
+    expect(value).toBeInstanceOf(Error)
+  );
+  do {
+    await sleep(100);
+  } while (args.getData.mock.calls.length < 3);
+  await expect(await args.getData.mock.results[2].value).toEqual({
+    response: "Second yes!",
+  });
 };
